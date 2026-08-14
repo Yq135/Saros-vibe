@@ -1,0 +1,57 @@
+# Saros 知识沉淀 · 自动化工作流配置
+# 用法：python workflow.py --question "你的问题"
+# 说明：所有密钥走环境变量，不落盘；未配置时自动降级（见 README）。
+
+workflow:
+  name: "Saros 知识沉淀工作流"
+  version: "1.0.0"
+
+  # 节点A：联网搜索（取 top 8）
+  A_search:
+    enabled: true
+    providers: ["bing", "toutiao"]   # 按顺序尝试，任一可用即取 top_k
+    top_k: 8
+    bing_api_key: "${BING_API_KEY}"          # Bing Web Search API v7
+    toutiao_api_key: "${TOUTIAO_API_KEY}"    # 头条搜索（如有）
+
+  # 节点B：知识库检索（飞书多维表格优先，本地兜底，召回 top 5）
+  B_knowledge:
+    enabled: true
+    primary: "feishu_base"     # 飞书多维表格「Saros知识库」
+    fallback: "local"          # 飞书未接时回退本地
+    top_k: 5
+    feishu:
+      # 已接通：2026-08-14 授权完成（用户身份：王泳清），「Saros知识库」多维表格
+      base_app_token: "JAfxbHYHKaBp24swmP5cuCFSnje"   # 多维表格 app_token
+      table_id: "tblq21sVt3djX7MA"                    # 表 ID（表名：知识库）
+      # lark-cli 走本地已授权 profile（~/.lark-cli/config.json），无需 app_id/app_secret
+      # 字段名映射：逻辑字段 -> 你「Saros知识库」里的真实列名（已按真实字段逐字对齐）
+      field_map:
+        id: "记录ID"          # 自动编号，与阶段二 knowledge_points 对应
+        type: "类型"          # 单选：问答沉淀 / 文章笔记 / 视频笔记
+        content: "内容"       # 原始内容或提问（多行文本）
+        summary: "AI 总结"    # 节点D 输出的结构化总结（多行文本）
+        tags: "标签"          # 多选，与阶段二标签空间同构
+        source: "来源链接"    # 搜索来源或原文 URL（文本）
+        updated_at: "创建时间" # 日期
+    local:
+      path: "knowledge/saros_kb.json"
+
+  # 节点C：LLM 合成回答
+  C_synthesize:
+    enabled: true
+    llm: "openai_compatible"   # 兼容 OpenAI 的接口；无 key 时进入 agent-bridge 模式
+    model: "${LLM_MODEL}"
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    prompt_file: "prompts/synthesize.md"
+    role_prompt: "prompts/saros_role.md"   # 权威角色/语气规范（来自 saros_prompt.txt）
+    tone: "gentle_caring"      # 温柔陪伴、像知心朋友
+
+  # 节点D：用户可见输出（严格遵循 saros_role.md 格式）
+  D_output:
+    enabled: true
+    format: "persona_blocks"   # 【Saros的解答】 + 【知识标签】
+    tag_count: [1, 3]          # 1-3 个中文标签（按 saros_prompt.txt）
+    # 注：内部仍保留结构化 JSON（answer/summary/tags）用于飞书「Saros知识库」回写，
+    #     但面向用户的展示只输出 persona_blocks 格式，不掺多余开头/结尾。
